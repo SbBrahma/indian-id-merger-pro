@@ -2,6 +2,12 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Upload, Download, RefreshCw, Image as ImageIcon, CheckCircle2, AlertCircle, Crop as CropIcon, X, Maximize2, Minimize2, RotateCw, MousePointer2, ScanLine, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Cropper, { Area } from 'react-easy-crop';
+import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface Point {
   x: number;
@@ -51,9 +57,42 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const perspectiveContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleFileChange = (side: 'front' | 'back') => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (side: 'front' | 'back') => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.type === 'application/pdf') {
+        try {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const typedarray = new Uint8Array(reader.result as ArrayBuffer);
+            const pdf = await pdfjsLib.getDocument(typedarray).promise;
+            const page = await pdf.getPage(1); // Get first page
+            const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d')!;
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({ canvasContext: context, viewport: viewport, canvas: canvas }).promise;
+            const preview = canvas.toDataURL('image/jpeg', 0.9);
+            
+            const result = { file, preview, processedPreview: null, croppedAreaPixels: null, rotation: 0, perspectivePoints: null };
+            if (side === 'front') setFront(result);
+            else setBack(result);
+            setMergedImage(null);
+            setActiveCropSide(side);
+            setRotation(0);
+            setCropMode('perspective'); // Default to perspective for PDF extracts
+          };
+          reader.readAsArrayBuffer(file);
+        } catch (err) {
+          console.error("Error processing PDF:", err);
+          alert("Failed to process PDF. Please try an image instead.");
+        }
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = { file, preview: reader.result as string, processedPreview: null, croppedAreaPixels: null, rotation: 0, perspectivePoints: null };
@@ -480,7 +519,7 @@ export default function App() {
                   <img src={front.processedPreview || front.preview} alt="Front" className="w-full h-full object-contain" style={{ transform: front.processedPreview ? 'none' : `rotate(${front.rotation}deg)` }} />
                   <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
                     <span className="text-white text-xs font-medium bg-black/50 px-3 py-1.5 rounded-full">Change Image</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleFileChange('front')} />
+                    <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange('front')} />
                   </label>
                 </div>
               ) : (
@@ -497,11 +536,11 @@ export default function App() {
                     
                     <label className="flex flex-col items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-black/5 hover:bg-black/10 text-black/60 transition-all border border-black/10 cursor-pointer group">
                       <Upload className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Upload File</span>
-                      <input type="file" className="hidden" accept="image/*" onChange={handleFileChange('front')} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-center">Upload File<br/><span className="text-[8px] opacity-60">(IMG/PDF)</span></span>
+                      <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange('front')} />
                     </label>
                   </div>
-                  <p className="text-[9px] text-black/30 font-bold uppercase tracking-widest text-center">Select an option to add front side</p>
+                  <p className="text-[9px] text-black/30 font-bold uppercase tracking-widest text-center">Select an option to add front side (IMG/PDF)</p>
                 </div>
               )}
             </div>
@@ -530,7 +569,7 @@ export default function App() {
                   <img src={back.processedPreview || back.preview} alt="Back" className="w-full h-full object-contain" style={{ transform: back.processedPreview ? 'none' : `rotate(${back.rotation}deg)` }} />
                   <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
                     <span className="text-white text-xs font-medium bg-black/50 px-3 py-1.5 rounded-full">Change Image</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleFileChange('back')} />
+                    <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange('back')} />
                   </label>
                 </div>
               ) : (
@@ -547,11 +586,11 @@ export default function App() {
                     
                     <label className="flex flex-col items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-black/5 hover:bg-black/10 text-black/60 transition-all border border-black/10 cursor-pointer group">
                       <Upload className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Upload File</span>
-                      <input type="file" className="hidden" accept="image/*" onChange={handleFileChange('back')} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-center">Upload File<br/><span className="text-[8px] opacity-60">(IMG/PDF)</span></span>
+                      <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange('back')} />
                     </label>
                   </div>
-                  <p className="text-[9px] text-black/30 font-bold uppercase tracking-widest text-center">Select an option to add back side</p>
+                  <p className="text-[9px] text-black/30 font-bold uppercase tracking-widest text-center">Select an option to add back side (IMG/PDF)</p>
                 </div>
               )}
             </div>
