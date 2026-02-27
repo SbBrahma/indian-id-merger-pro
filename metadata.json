@@ -1,0 +1,5 @@
+{
+  "name": "ID Card Merger",
+  "description": "Merge front and back images of an ID card into a single side-by-side image.",
+  "requestFramePermissions": ["camera"]
+}
